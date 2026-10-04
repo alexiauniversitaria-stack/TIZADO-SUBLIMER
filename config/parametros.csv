@@ -1,0 +1,17 @@
+parametro,valor,descripcion
+largo_mesa_cm,496,Largo de la mesa de corte
+perdida_ancho_cm,2,Pérdida total en los dos bordes de la tela
+perdida_largo_cm,0.5,Pérdida total al inicio y al final del tendido
+k_pantalones,4,Pantalones por capa (máximo; en automático se reduce si no caben)
+capas_max,100,Capas máximas por tendido
+talla_base,32,Talla de los moldes digitalizados
+paso_talla,2,Diferencia entre tallas consecutivas
+graduacion_cm,1,Franja que se recorta por lado en cada talla
+holgura_cm,0,Separación entre piezas al marcar
+resolucion_cm,1,Celda para calcular superposiciones
+gx_cm,5,Separación de la rejilla a lo largo
+gy_cm,4,Separación de la rejilla a lo ancho
+tiempo_limite_s,120,Tiempo límite por bloque
+gap_rel,0.05,Gap relativo aceptado
+max_pares,300000,Límite para usar la restricción (4) en pares
+margen_ventana_cm,30,Margen de la ventana de las piezas grandes
