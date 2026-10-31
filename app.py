@@ -37,7 +37,8 @@ def calcular_tizado(archivo_moldes, talla, W, L_max, K, params):
     fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
     plt.close(fig)
     return dict(L=tiz.L, png=buf.getvalue(), verif=tiz.verificar(), segundos=tiz.segundos,
-                piezas=sum(tiz.Q.values()))
+                piezas=sum(tiz.Q.values()), verif_pol=tiz.verificar_poligonos(), bloques=tiz.bloques_info,
+                gap_max=tiz.gap_max, dist_cota=tiz.dist_cota)
 
 
 @st.cache_data(show_spinner=False)
@@ -179,6 +180,14 @@ with tab1:
                 v = tzd['verif']
                 st.caption(('✅' if all(v.values()) else '❌') + ' Sin superposiciones, todas las piezas colocadas y dentro de la tela'
                            f' · {tzd["piezas"]} piezas · cálculo en {tzd["segundos"]:.0f} s')
+                vp = tzd['verif_pol']
+                gtxt = 'sin dato' if tzd['gap_max'] is None else f"{tzd['gap_max']:.2f} %"
+                st.caption(f"Verificación con polígonos: {vp['superposiciones']} superposiciones "
+                           f"(mayor {vp['mayor_superposicion_cm2']} cm²) · gap máximo por bloque: {gtxt} · "
+                           f"distancia a la cota inferior: {tzd['dist_cota']:.2f} %")
+                st.download_button('Descargar registro de bloques (CSV)',
+                                   pd.DataFrame(tzd['bloques']).to_csv(index=False).encode('utf-8-sig'),
+                                   file_name=f'bloques_talla_{s}.csv', mime='text/csv', key=f'bq_{esc}_{s}')
                 st.download_button('Descargar plantilla (PNG)', tzd['png'], file_name=f'plantilla_talla_{s}.png',
                                    mime='image/png', key=f'dl_{esc}_{s}')
         st.divider()

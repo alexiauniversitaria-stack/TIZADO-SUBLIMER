@@ -177,13 +177,27 @@ class Tizador:
                     else:
                         prob += len(C) * z[t, d] + pulp.lpSum(z[u, e] for e in C) <= len(C)
         prob += L >= (area_previa + sum(c * self.AREA[m] for m, c in piezas.items())) / self.W   # (6)
-        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=self.P['tiempo_limite_s'], gapRel=self.P['gap_rel'])
+        import os, re, tempfile
+        log = os.path.join(tempfile.gettempdir(), f'cbc_{os.getpid()}_{id(prob)}.log')
+        semilla = int(self.P.get('semilla', 1))
+        solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=self.P['tiempo_limite_s'], gapRel=self.P['gap_rel'],
+                                   logPath=log, options=[f'randomCbcSeed {semilla}'])
         t0 = time.time()
         prob.solve(solver)
         seg = time.time() - t0
         ok = (prob.status == 1 or getattr(prob, 'sol_status', 0) in (1, 2)) and \
             all(v.varValue is not None for v in z.values())
-        return ok, z, L, seg, forma
+        # gap del bloque, leído del registro de CBC
+        texto = open(log, encoding='utf-8', errors='ignore').read() if os.path.exists(log) else ''
+        gap = None
+        if 'Optimal solution found' in texto:
+            gap = 0.0
+        else:
+            m_obj = re.search(r'^Objective value:\s*([-\d.eE+]+)', texto, re.M)
+            m_lb = re.search(r'^Lower bound:\s*([-\d.eE+]+)', texto, re.M)
+            if m_obj and m_lb and float(m_obj.group(1)) > 0:
+                gap = 100 * (float(m_obj.group(1)) - float(m_lb.group(1))) / float(m_obj.group(1))
+        return ok, z, L, seg, forma, gap
 
     def resolver(self, progreso=None):
         """Procedimiento por bloques: grandes (un molde por bloque), luego pequeñas en los huecos."""
@@ -195,6 +209,7 @@ class Tizador:
         bloques += [dict(nombre=m, piezas={m: self.Q[m]}, auto=False) for m in pequenas]
         ocupado = np.zeros((self.NXB, self.NYB), dtype=bool)
         colocadas, L_act, area_prev, seg_total = [], 0.0, 0.0, 0.0
+        self.bloques_info = []
         for k, b in enumerate(bloques):
             tipos_b = [t for m in b['piezas'] for t in self.T_m[m]]
             x_ini = max(0, L_act - largo_g) if b['auto'] else 0
@@ -203,7 +218,7 @@ class Tizador:
                 D = {t: self.puntos_factibles(t, x_ini, x_fin, ocupado) for t in tipos_b}
                 ok = False
                 if sum(len(v) for v in D.values()) >= sum(b['piezas'].values()):
-                    ok, z, L, seg, forma = self._resolver_bloque(tipos_b, D, b['piezas'], L_act, area_prev)
+                    ok, z, L, seg, forma, gap = self._resolver_bloque(tipos_b, D, b['piezas'], L_act, area_prev)
                     seg_total += seg
                 if ok or x_fin >= self.L_MAX:
                     break
@@ -218,11 +233,38 @@ class Tizador:
                     colocadas.append((t, d))
             L_act = max(L_act, pulp.value(L))
             area_prev += sum(c * self.AREA[m] for m, c in b['piezas'].items())
+            self.bloques_info.append(dict(bloque=b['nombre'], segundos=round(seg, 1),
+                                          gap_pct=None if gap is None else round(gap, 2),
+                                          largo_cm=round(L_act, 1)))
             if progreso:
                 progreso((k + 1) / len(bloques), f'Bloque {k + 1} de {len(bloques)}: {b["nombre"]}')
         self.colocadas, self.L = colocadas, L_act
         self.segundos = seg_total
+        self.cota = area_prev / self.W                                   # cota inferior (6) del tizado completo
+        self.dist_cota = 100 * (L_act - self.cota) / L_act if L_act > 0 else None
+        gaps = [b['gap_pct'] for b in self.bloques_info if b['gap_pct'] is not None]
+        self.gap_max = max(gaps) if gaps else None
         return colocadas, L_act
+
+    def verificar_poligonos(self, tol_cm2=0.5):
+        """Verificación independiente con los polígonos reales (no con la rejilla de celdas)."""
+        from shapely.geometry import Polygon
+        pols = [Polygon(self.TIPOS[t]['pts'] + [d[0] * self.GX, d[1] * self.GY]).buffer(0)
+                for t, d in self.colocadas]
+        cajas = [p.bounds for p in pols]
+        choques, peor = 0, 0.0
+        for i in range(len(pols)):
+            for j in range(i + 1, len(pols)):
+                a1, b1, c1, d1 = cajas[i]
+                a2, b2, c2, d2 = cajas[j]
+                if c1 <= a2 or c2 <= a1 or d1 <= b2 or d2 <= b1:
+                    continue                                   # sus rectángulos no se tocan
+                a = pols[i].intersection(pols[j]).area
+                peor = max(peor, a)
+                if a > tol_cm2:
+                    choques += 1
+        dentro = all(p.bounds[1] >= -1e-6 and p.bounds[3] <= self.W + 1e-6 for p in pols)
+        return dict(superposiciones=choques, mayor_superposicion_cm2=round(peor, 2), dentro_de_la_tela=dentro)
 
     def verificar(self):
         """Verificación independiente (punto de control 3)."""
