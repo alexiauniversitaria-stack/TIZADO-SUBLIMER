@@ -1,2 +1,3 @@
 modelo,archivo_moldes,tallas
 Pantalón denim de uniforme,moldes/pantalon_denim.csv,26;28;30;32;34;36
+Pantalón denim varón,moldes/pantalon_varon.csv,32;34;36;38;40;42
