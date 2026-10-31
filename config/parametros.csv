@@ -15,3 +15,4 @@ tiempo_limite_s,120,Tiempo límite por bloque
 gap_rel,0.05,Gap relativo aceptado
 max_pares,300000,Límite para usar la restricción (4) en pares
 margen_ventana_cm,30,Margen de la ventana de las piezas grandes
+semilla,1,Semilla del solucionador CBC (misma semilla = mismo resultado)
