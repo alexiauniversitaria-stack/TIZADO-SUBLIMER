@@ -58,13 +58,32 @@ def graduar(pts, talla, P, gradua=True):
 
 
 def _gradua(g):
+    if 'talla' in g and g['talla'].notna().any():
+        return False                                  # pieza con medida propia por talla: no se gradúa
     return 'gradua' not in g or int(g['gradua'].iloc[0]) == 1
+
+
+def piezas_de_talla(moldes_df, talla):
+    """
+    Agrupa los vértices por molde para una talla.
+    Si una pieza tiene la columna 'talla' llena (por ejemplo, la pretina), se usan solo
+    los vértices de esa talla; si está vacía, la pieza es la misma para todas las tallas
+    (y se gradúa según la columna 'gradua').
+    """
+    df = moldes_df
+    if 'talla' in df:
+        t = pd.to_numeric(df['talla'], errors='coerce')
+        df = df[t.isna() | (t == int(talla))]
+        faltan = {m for m in set(moldes_df.loc[t.notna(), 'molde']) if m not in set(df['molde'])}
+        if faltan:
+            raise ValueError(f'Falta la medida de {", ".join(sorted(faltan))} para la talla {talla} en el CSV de moldes.')
+    return df.groupby('molde', sort=False)
 
 
 def area_pantalon(moldes_df, talla, P):
     """Área (cm²) de las piezas de un pantalón en una talla."""
     total = 0.0
-    for m, g in moldes_df.groupby('molde', sort=False):
+    for m, g in piezas_de_talla(moldes_df, talla):
         g = g.sort_values('vertice')
         pts = graduar(g[['x_cm', 'y_cm']].to_numpy(float), talla, P, _gradua(g))
         total += int(g['n_por_pantalon'].iloc[0]) * area_poligono(pts)
@@ -87,8 +106,11 @@ class Tizador:
     # ---- conjuntos M, q_m y T
     def _construir_tipos(self):
         self.TIPOS, self.Q, self.AREA, self.GRUPO = [], {}, {}, {}
-        for m, g in self.df.groupby('molde', sort=False):
+        self.NOMBRE = {}                                  # nombre técnico de cada molde (para la leyenda)
+        for m, g in piezas_de_talla(self.df, self.talla):
             g = g.sort_values('vertice')
+            if 'nombre' in g and pd.notna(g['nombre'].iloc[0]) and str(g['nombre'].iloc[0]).strip():
+                self.NOMBRE[m] = str(g['nombre'].iloc[0]).strip()
             base = graduar(g[['x_cm', 'y_cm']].to_numpy(float), self.talla, self.P, _gradua(g))
             n = int(g['n_por_pantalon'].iloc[0])
             espejo = 'par_espejo' in g and int(g['par_espejo'].iloc[0]) == 1 and n % 2 == 0
@@ -284,15 +306,23 @@ class Tizador:
         from matplotlib.patches import Polygon as MplPolygon
         fig, ax = plt.subplots(figsize=(14, max(3, min(9, 14 * self.W / max(self.L, 1)))))
         ax.add_patch(plt.Rectangle((0, 0), self.L, self.W, fc='#fbe9e7', ec='k'))
-        base = sorted({m.replace(' izq', '').replace(' der', '') for m in self.MOLDES})
+        base = list(dict.fromkeys(m.replace(' izq', '').replace(' der', '') for m in self.MOLDES))   # piezas grandes primero
         col = dict(zip(base, plt.cm.tab20(np.linspace(0, 1, max(len(base), 2)))))
         for t, d in self.colocadas:
             tp = self.TIPOS[t]
             nombre = tp['molde'].replace(' izq', '').replace(' der', '')
             pol = tp['pts'] + [d[0] * self.GX, d[1] * self.GY]
             ax.add_patch(MplPolygon(pol, fc=col[nombre], ec='k', lw=0.6))
-        handles = [plt.Rectangle((0, 0), 1, 1, fc=col[n]) for n in base]
-        ax.legend(handles, base, loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=min(6, len(base)), fontsize=9)
+            # letra de la pieza, en el punto interior más alejado del borde
+            etiqueta = _codigo(nombre)
+            cx, cy = _punto_interior(pol)
+            lado = min(tp['w'], tp['h'])
+            ax.text(cx, cy, etiqueta, ha='center', va='center', fontsize=8 if lado >= 8 else 5.5,
+                    weight='bold', color='#1a1a1a', clip_on=True)
+        handles = [plt.Rectangle((0, 0), 1, 1, fc=col[n], ec='k', lw=0.6) for n in base]
+        textos = [f'{_codigo(n)} · {self.NOMBRE.get(n, n)}' for n in base]
+        ax.legend(handles, textos, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=min(4, len(base)),
+                  fontsize=9, title='Piezas del tizado', title_fontsize=9, frameon=False)
         ax.set_xlim(0, self.L * 1.01)
         ax.set_ylim(0, self.W)
         ax.set_aspect('equal')
@@ -301,6 +331,30 @@ class Tizador:
         ax.set_title(titulo or f'Talla {self.talla}: largo {self.L:.1f} cm, ancho útil {self.W:.0f} cm')
         fig.tight_layout()
         return fig
+
+
+def _codigo(molde):
+    """Código corto que se escribe sobre cada pieza (la letra, o una abreviatura para presilla y pretina)."""
+    especiales = {'presilla': 'Ps', 'pretina': 'Pt'}
+    return especiales.get(molde.lower(), molde if len(molde) <= 3 else molde[:3].capitalize())
+
+
+def _punto_interior(pol):
+    """Punto dentro de la pieza y lejos de su borde, para escribir la letra (sirve también en piezas curvas)."""
+    xmin, ymin = pol.min(axis=0)
+    xmax, ymax = pol.max(axis=0)
+    xs, ys = np.linspace(xmin, xmax, 25), np.linspace(ymin, ymax, 25)
+    XX, YY = np.meshgrid(xs, ys)
+    P = np.c_[XX.ravel(), YY.ravel()]
+    dentro = Path(pol).contains_points(P)
+    if not dentro.any():
+        return pol.mean(axis=0)
+    P = P[dentro]
+    a, b = pol, np.roll(pol, -1, axis=0)                      # distancia de cada punto al borde más cercano
+    ab = b - a
+    t = np.clip(((P[:, None, :] - a) * ab).sum(-1) / np.maximum((ab ** 2).sum(-1), 1e-9), 0, 1)
+    dist = np.linalg.norm(P[:, None, :] - (a + t[..., None] * ab), axis=-1).min(axis=1)
+    return P[dist.argmax()]
 
 
 # ----------------------------------------------------------------------------- plan de corte

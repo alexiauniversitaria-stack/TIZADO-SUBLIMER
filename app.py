@@ -22,7 +22,7 @@ def leer_config():
     return telas, modelos, P
 
 TELAS, MODELOS, P0 = leer_config()
-EJEMPLO = {26: 4, 28: 30, 30: 90, 32: 99, 34: 45, 36: 4}   # pedido de 272 pantalones
+EJEMPLO = {}   # cantidades iniciales por talla (vacío: se ingresan las de cada orden)
 
 
 @st.cache_data(show_spinner=False)
@@ -53,11 +53,16 @@ st.caption('Modelo MILP con geometría real de los moldes · SUBLIMER E.I.R.L.')
 
 with st.sidebar:
     st.header('Datos del pedido')
-    modelo = st.selectbox('Modelo de pantalón', MODELOS['modelo'])
+    GENERO = MODELOS.set_index('modelo')['genero'].to_dict() if 'genero' in MODELOS else {}
+    modelo = st.selectbox('Modelo de pantalón', MODELOS['modelo'],
+                          format_func=lambda m: f'{m} ({GENERO[m]})' if m in GENERO else m)
     fila_modelo = MODELOS.set_index('modelo').loc[modelo]
     tallas = [int(t) for t in str(fila_modelo['tallas']).split(';')]
 
-    tela_nombre = st.selectbox('Tipo de tela', TELAS['tela'])
+    lista_telas = list(TELAS['tela'])
+    tela_modelo = fila_modelo['tela'] if 'tela' in fila_modelo and fila_modelo['tela'] in lista_telas else lista_telas[0]
+    tela_nombre = st.selectbox('Tipo de tela', lista_telas, index=lista_telas.index(tela_modelo), key=f'tela_{modelo}',
+                               help='Se propone la tela habitual del modelo; pueden cambiarla si la orden usa otra.')
     tela = TELAS.set_index('tela').loc[tela_nombre].to_dict()
     ancho = st.number_input('Ancho bruto medido del rollo (cm)', min_value=80.0, max_value=250.0,
                             value=float(tela['ancho_referencia_cm']), step=0.5,
@@ -91,6 +96,8 @@ with st.sidebar:
 
 P = dict(P0)
 P['gx_cm'] = float(gx)
+if 'talla_base' in fila_modelo and pd.notna(fila_modelo['talla_base']):
+    P['talla_base'] = float(fila_modelo['talla_base'])     # talla en la que se midieron los moldes de este modelo
 W = ancho - P['perdida_ancho_cm']
 L_MAX = P['largo_mesa_cm'] - P['perdida_largo_cm']
 params = tuple(sorted(P.items()))
