@@ -1,5 +1,5 @@
 modelo,genero,archivo_moldes,tallas,talla_base,precio_venta_soles,tela
 Pantalón cargo,Hombre,moldes/pantalon_cargo.csv,28;30;32;34;36;38;40;42,32,35.00,Drill tecnología 100% poliéster
 Pantalón clásico beige,Hombre,moldes/pantalon_clasico_beige.csv,28;30;32;34;36;38;40;42,32,38.00,Drill Santista
-Pantalón jogger,Hombre,moldes/pantalon_jogger.csv,28;30;32;34;36;38;40;42,34,30.00,Drill tecnología 100% poliéster
+Pantalón jogger,Hombre,moldes/pantalon_jogger.csv,28;30;32;34;36;38;40;42,34,30.00,Drill importado 100% sintético
 Pantalón jean clásico mujer,Mujer,moldes/pantalon_jean_clasico_mujer.csv,26;28;30;32;34;36,28,45.00,Denim stretch 140 cm
