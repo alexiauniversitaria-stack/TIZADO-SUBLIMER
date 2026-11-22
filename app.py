@@ -124,8 +124,12 @@ if calcular:
     necesarias = sorted({tmax} | (set(tallas_ped) if 'por_talla' in escenarios else set()), reverse=True)
     tizados, K_talla = {}, {}
     barra = st.progress(0.0, text='Calculando tizados…')
+    total_pedido = sum(orden.values())
     for i, s in enumerate(necesarias):
-        for k in (range(int(K), 0, -1) if auto_k else [int(K)]):
+        # no tiene sentido poner en una capa más pantalones de los que se necesitan con ese tizado
+        necesarios = total_pedido if (s == tmax and 'actual' in escenarios) else orden[s]
+        k_max = max(1, min(int(K), int(necesarios)))
+        for k in (range(k_max, 0, -1) if auto_k else [k_max]):
             if k * areas[s] / W > L_MAX:          # ni con 100 % de aprovechamiento cabría
                 continue
             with st.spinner(f'Optimizando el tizado de la talla {s} con {k} pantalones por capa… '
@@ -137,7 +141,13 @@ if calcular:
                 except RuntimeError:
                     continue
         if s not in tizados:
-            st.error(f'La talla {s} no cabe en la mesa con {int(K)} o menos pantalones por capa sobre un ancho útil de {W:.0f} cm.')
+            if auto_k:
+                st.error(f'La talla {s} no cabe en la mesa ni con 1 pantalón por capa sobre un ancho útil de {W:.0f} cm. '
+                         'Revisen el ancho del rollo y el largo de la mesa.')
+            else:
+                st.error(f'La talla {s} no cabe en la mesa con {k_max} pantalones por capa sobre un ancho útil de {W:.0f} cm. '
+                         'Activen «Calcular automáticamente cuántos pantalones caben por capa» en Opciones avanzadas, '
+                         'o bajen los pantalones por capa.')
             st.stop()
         barra.progress((i + 1) / len(necesarias), text=f'Talla {s}: {K_talla[s]} pantalones por capa')
     barra.empty()
